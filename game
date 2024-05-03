@@ -1,0 +1,297 @@
+import tkinter as tk
+import socket
+import threading
+
+PORTNUM = 8000
+TYPE_BLACK = 1
+TYPE_WHITE = 2
+TYPE_NONE = 0
+FONTSIZE = ("", 18)
+turn = TYPE_BLACK
+myturn = TYPE_BLACK
+endflag = True
+timelimit = 0
+kachi = 0
+turntbl = ["", "黒", "白"]
+
+# 0=空白、1=黒、2=白 14x14
+masu = [
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+,   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+,   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+,   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+,   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+,   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+,   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+,   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+,   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+,   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+,   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+,   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+,   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+,   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+]
+
+
+def timerctrl():
+    global timelimit, endflag, myturn
+
+    try:
+        # UDP受信
+        recvdata, fromdata = sock.recvfrom(16)
+        # 受信データを変換
+        recvtext = str(recvdata, 'utf-8')
+        print(recvtext)
+        # 送信元IPアドレスを表示
+        ipaddr.set(fromdata[0])
+    except socket.timeout: # 受信タイムアウト
+        recvtext = ""
+    if timelimit > 0:
+        timelimit -= 1
+        if timelimit <= 0: # 時間切れの場合
+            cvs.create_text(80, 20, text="Timeout", font=FONTSIZE)
+            endflag = True # ゲーム終了
+
+    if recvtext == "ok": # レスポンスを受信したら
+        timelimit = 0 # 送受信に成功    
+    elif recvtext != "": # 受信データがある場合
+        sendsub("ok") # レスポンスを送信
+        if recvtext == "start": # 相手が接続要求してきた場合
+            myturn = TYPE_WHITE # あなた＝後手
+            initBoard() # 盤を初期化
+        else: # 石の座標を受信した場合
+            pos = recvtext.split(",")
+            for i in range(len(pos)):
+                pos[i] = int(pos[i])
+            print(pos)
+            print(f"座標{pos}を受信しました。")
+            print(pos[0], pos[1])
+            masu[pos[1]][pos[0]] = turn
+            redraw()
+            print(turn)
+            judge(pos[0], pos[1], turn)
+            nextTurn()
+            
+            
+    
+    timer = threading.Timer(1, timerctrl)
+    timer.start()
+
+# データを送信する関数
+def sendsub(sendtext):
+    global timelimit
+    addr = ipaddr.get()
+    # 送信するテキストを送信用のデータに変換
+    senddata = bytes(sendtext, "utf-8")
+    # UDP送信
+    sock.sendto(senddata, (addr, PORTNUM))
+    if sendtext != "ok":
+        timelimit = 5
+
+# 送信ボタンクリック時に実行する関数
+def button_click(e):
+    global myturn
+    myturn = TYPE_BLACK
+    sendsub("start")
+    initBoard()
+
+# 接続画面を表示する関数
+def connection():
+    cvs.place_forget() # キャンバスを非表示
+    cvs2.place_forget()
+    lbl.place(x=375, y=250, width=120, height=20, anchor=tk.CENTER)
+    ent.place(x=375, y=250, width=120, height=20, anchor=tk.CENTER)
+    btn.place(x=375, y=310, width=120, height=60, anchor=tk.CENTER)
+
+# 盤の初期化
+def initBoard():
+    global turn, endflag, kachi
+    lbl.place_forget()
+    ent.place_forget()
+    btn.place_forget()
+    cvs.place(x=0, y=0)
+    cvs2.place(x=750, y=0)
+    
+    turn = TYPE_BLACK
+    endflag = False
+    kachi = 0
+
+    cvs2.delete("all")
+    cvs2.create_text(10 , 100, text="あなた:", fill="black",font=FONTSIZE, anchor=tk.NW)
+    cvs2.create_text(110, 100, text=turntbl[myturn], font=FONTSIZE, fill="black", anchor=tk.NW)
+    cvs2.create_text(10 , 200, text="あいて:", fill="black",font=FONTSIZE, anchor=tk.NW)
+    if myturn == TYPE_WHITE:
+        cvs2.create_text(110, 200, text=turntbl[1], font=FONTSIZE, fill="black", anchor=tk.NW)
+    else:
+        cvs2.create_text(110, 200, text=turntbl[2], font=FONTSIZE, fill="black", anchor=tk.NW)
+
+    if turn == myturn:
+        cvs2.create_text(10, 400, text="あなたの番です", font=FONTSIZE, fill="black", anchor=tk.NW)
+    else:
+        cvs2.create_text(10, 400, text="あいての番です", font=FONTSIZE, fill="black", anchor=tk.NW)
+
+
+    # 盤面リセット
+    for y in range(14):
+        for x in range(14):
+            masu[y][x] = 0
+
+    redraw()
+
+
+# 盤を再描画
+def redraw():
+    cvs.delete("all")
+    # 線の描画
+    for i in range(1, 16, 1):
+        cvs.create_line(50*i, 0, 50*i, 750, fill="black", width=2)
+        cvs.create_line(0, 50*i, 750, 50*i, fill="black", width=2)
+    # マルバツの描画
+    for y in range(14):
+        for x in range(14):
+            X = 50*x + 50
+            Y = 50*y + 50
+            if masu[y][x] == 1:
+                cvs.create_oval(X-25, Y-25, X+25, Y+25, fill="black", width=0)
+            elif masu[y][x] == 2:
+                cvs.create_oval(X-25, Y-25, X+25, Y+25, fill="white", width=0)
+
+
+    cvs.update()
+
+# クリックイベントが発生したときに実行する関数
+def canvas_click(e):
+    if endflag == True: # ゲームが終了していた場合
+        connection() # 接続画面を表示
+        return
+    
+    if turn != myturn: # 自分の番ではないのにクリックした場合、入力を無効
+        return
+    
+    # 座標を取得
+    mx = int((e.x-25)/50)
+    my = int((e.y-25)/50)
+    if mx > 15: mx = 15
+    if my > 15: my = 15
+    pos = (mx, my)
+
+    # 碁石を設置
+    if masu[my][mx] == 0:
+        masu[my][mx] = turn
+        redraw()
+        sendsub(str(pos[0]) + "," + str(pos[1]))
+        print(f"座標{pos}を送信しました。")
+        judge(mx, my, turn)
+        nextTurn()
+        # 石の座標を送信
+        
+
+# プレイヤー切り替え
+def nextTurn():
+    global turn
+    if turn == 1:
+        turn = 2
+    elif turn == 2:
+        turn = 1
+
+    cvs2.delete("all")
+    cvs2.create_text(10 , 100, text="あなた:", fill="black",font=FONTSIZE, anchor=tk.NW)
+    cvs2.create_text(110, 100, text=turntbl[myturn], font=FONTSIZE, fill="black", anchor=tk.NW)
+    cvs2.create_text(10 , 200, text="あいて:", fill="black",font=FONTSIZE, anchor=tk.NW)
+    if myturn == TYPE_WHITE:
+        cvs2.create_text(110, 200, text=turntbl[1], font=FONTSIZE, fill="black", anchor=tk.NW)
+    else:
+        cvs2.create_text(110, 200, text=turntbl[2], font=FONTSIZE, fill="black", anchor=tk.NW)
+
+    if turn == myturn:
+        cvs2.create_text(10, 400, text="あなたの番です", font=FONTSIZE, fill="black", anchor=tk.NW)
+    else:
+        cvs2.create_text(10, 400, text="あいての番です", font=FONTSIZE, fill="black", anchor=tk.NW)
+
+
+# 勝敗判定
+def judge(mx, my, turn):
+    global kachi, endflag
+    num = 0
+    # 右斜め
+    for j in range(-4, 1):
+        for s in range(j, j+5):
+            if 0 <= mx + s <= 13 and 0 <= my + s <= 13:
+                if masu[my + s][mx + s] == turn:
+                    num += 1
+        if num == 5:
+            kachi = turn
+            break
+        else:
+            num = 0
+    # 左斜め
+    for j in range(-4, 1):
+        for s in range(j, j+5):
+            if 0 <= mx - s <= 13 and 0 <= my + s <= 13:
+                if masu[my + s][mx - s] == turn:
+                    num += 1
+        if num == 5:
+            kachi = turn
+            break
+        else:
+            num = 0
+    # 縦
+    for j in range(-4, 1):
+        for s in range(j, j+5):
+            if 0 <= my + s <= 13:
+                if  masu[my + s][mx] == turn:
+                    num += 1
+        if num == 5:
+            kachi = turn
+            break
+        else:
+            num = 0
+    # 横
+    for j in range(-4, 1):
+        for s in range(j, j+5):
+            if 0 <= mx + s <= 13:
+                if  masu[my][mx + s] == turn:
+                    num += 1
+        if num == 5:
+            kachi = turn
+            break
+        else:
+            num = 0
+
+    if kachi == 1:
+        cvs.create_text(750/2, 750/2, text="黒の勝ち", font=("Times New Roman", 100), fill="#233B6C")
+        endflag = True
+    elif kachi == 2:
+        cvs.create_text(750/2, 750/2, text="白の勝ち", font=("Times New Roman", 100), fill="lightGray")
+        endflag = True
+
+# ウインドウの作成
+root = tk.Tk()
+root.title("五目並べ")
+root.geometry("950x750")
+
+lbl = tk.Label(root, text="相手のIPアドレス")
+
+ipaddr = tk.StringVar()
+ipaddr.set("192.168.x.x")
+ent = tk.Entry(root, textvariable=ipaddr)
+
+btn = tk.Button(root, text="開始")
+btn.bind("<Button-1>", button_click)
+cvs = tk.Canvas(root, width=750, height=750, bg="goldenrod")
+cvs2 = tk.Canvas(root, width=200, height=750, bg="lightgray")
+
+cvs.bind("<Button-1>", canvas_click)
+connection()
+
+# ネットワークを初期化
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind(("", PORTNUM))
+sock.settimeout(0.1) # 受信タイムアウト時間
+
+# スレッドを作成
+thread = threading.Thread(target=timerctrl)
+thread.daemon = True
+thread.start() # スレッドを開始
+
+root.mainloop()
